@@ -6,10 +6,11 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use LaravelEnso\CacheChain\Exceptions\Chain as Exception;
 use Tests\TestCase;
+use PHPUnit\Framework\Attributes\Test;
 
 class ChainTest extends TestCase
 {
-    /** @test */
+    #[Test]
     public function should_cache_on_all_configured_providers()
     {
         $providers = ['array', 'file'];
@@ -22,7 +23,7 @@ class ChainTest extends TestCase
             ->assertEquals('bar', Cache::store($provider)->get('foo')));
     }
 
-    /** @test */
+    #[Test]
     public function should_get_from_first_layer_when_available()
     {
         Cache::store('chain')->providers(['array', new Repository(Mockery::mock(Store::class))]);
@@ -32,7 +33,7 @@ class ChainTest extends TestCase
         $this->assertEquals('bar', Cache::store('chain')->get('foo'));
     }
 
-    /** @test */
+    #[Test]
     public function should_get_from_superior_layer_when_first_not_available()
     {
         Cache::store('chain')->providers([new Repository(Mockery::spy(Store::class)), 'array']);
@@ -42,7 +43,7 @@ class ChainTest extends TestCase
         $this->assertEquals('bar', Cache::store('chain')->get('foo'));
     }
 
-    /** @test */
+    #[Test]
     public function should_cache_inferior_layers_on_get_when_superior_exists()
     {
         Cache::store('chain')->providers(['array', 'file']);
@@ -54,7 +55,7 @@ class ChainTest extends TestCase
         $this->assertEquals('bar', Cache::store('array')->get('foo'));
     }
 
-    /** @test */
+    #[Test]
     public function should_sync_inferior_layers_when_superior_exists()
     {
         Cache::store('chain')->providers(['array', 'file']);
@@ -65,7 +66,7 @@ class ChainTest extends TestCase
         $this->assertEquals(6, Cache::store('array')->get('foo'));
     }
 
-    /** @test */
+    #[Test]
     public function can_flush()
     {
         $providers = ['file', 'array'];
@@ -80,7 +81,7 @@ class ChainTest extends TestCase
             ->assertFalse(Cache::store($provider)->has('bar')));
     }
 
-    /** @test */
+    #[Test]
     public function can_forget()
     {
         $providers = ['file', 'array'];
@@ -95,7 +96,7 @@ class ChainTest extends TestCase
             ->assertTrue(Cache::store($provider)->has('bar')));
     }
 
-    /** @test */
+    #[Test]
     public function can_increment()
     {
         $providers = ['file', 'array'];
@@ -108,7 +109,7 @@ class ChainTest extends TestCase
             ->assertEquals(3, Cache::store($provider)->get('number')));
     }
 
-    /** @test */
+    #[Test]
     public function can_decrement()
     {
         $providers = ['file', 'array'];
@@ -121,7 +122,7 @@ class ChainTest extends TestCase
             ->assertEquals(1, Cache::store($provider)->get('number')));
     }
 
-    /** @test */
+    #[Test]
     public function should_throw_exception_with_empty_providers()
     {
         $this->expectException(Exception::class);
@@ -129,7 +130,7 @@ class ChainTest extends TestCase
         Cache::store('chain')->providers([]);
     }
 
-    /** @test */
+    #[Test]
     public function should_throw_exception_with_empty_lock_providers()
     {
         $this->expectException(Exception::class);
