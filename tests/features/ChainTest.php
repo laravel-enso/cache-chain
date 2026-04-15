@@ -123,6 +123,20 @@ class ChainTest extends TestCase
     }
 
     #[Test]
+    public function can_touch()
+    {
+        $providers = ['file', 'array'];
+        Cache::store('chain')->providers($providers);
+
+        Cache::store('chain')->put('foo', 'bar', 60);
+
+        $this->assertTrue(Cache::store('chain')->touch('foo', 120));
+
+        Collection::wrap($providers)->each(fn ($provider) => $this
+            ->assertEquals('bar', Cache::store($provider)->get('foo')));
+    }
+
+    #[Test]
     public function should_throw_exception_with_empty_providers()
     {
         $this->expectException(Exception::class);
@@ -141,7 +155,9 @@ class ChainTest extends TestCase
 
     protected function tearDown(): void
     {
-        Cache::store('file')->flush();
+        if (is_dir(storage_path('framework/cache/data'))) {
+            Cache::store('file')->flush();
+        }
 
         parent::tearDown();
     }

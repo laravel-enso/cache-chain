@@ -36,6 +36,11 @@ class Chain extends TaggableStore implements LockProvider
         return $this->handle('put', ...func_get_args());
     }
 
+    public function touch($key, $seconds)
+    {
+        return $this->handle('touch', $key, $seconds);
+    }
+
     public function increment($key, $value = 1)
     {
         $current = $this->cacheGet($key);
