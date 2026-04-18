@@ -4,6 +4,7 @@ use Illuminate\Cache\Repository;
 use Illuminate\Contracts\Cache\Store;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
+use LaravelEnso\CacheChain\Extensions\Chain;
 use LaravelEnso\CacheChain\Exceptions\Chain as Exception;
 use Tests\TestCase;
 use PHPUnit\Framework\Attributes\Test;
@@ -134,6 +135,66 @@ class ChainTest extends TestCase
 
         Collection::wrap($providers)->each(fn ($provider) => $this
             ->assertEquals('bar', Cache::store($provider)->get('foo')));
+    }
+
+    public function can_cache_forever_on_all_configured_providers()
+    {
+        $providers = ['file', 'array'];
+        Cache::store('chain')->providers($providers);
+
+        $this->assertTrue(Cache::store('chain')->forever('forever', 'value'));
+
+        Collection::wrap($providers)->each(fn ($provider) => $this
+            ->assertEquals('value', Cache::store($provider)->get('forever')));
+    }
+
+    #[Test]
+    public function backfills_missing_layers_forever_when_default_ttl_is_zero()
+    {
+        $missingLayer = new Repository(Mockery::mock(Store::class));
+        $superior = new Repository(Mockery::mock(Store::class));
+
+        $missingLayer->getStore()
+            ->shouldReceive('get')->once()->with('foo')->andReturn(null);
+        $missingLayer->getStore()
+            ->shouldReceive('forever')->once()->with('foo', 'bar')->andReturn(true);
+
+        $superior->getStore()
+            ->shouldReceive('get')->once()->with('foo')->andReturn('bar');
+
+        $chain = new Chain([$missingLayer, $superior], 0);
+
+        $this->assertEquals('bar', $chain->get('foo'));
+    }
+
+    #[Test]
+    public function uses_last_lock_capable_provider_for_locks()
+    {
+        Cache::store('chain')->providers(['array', 'file']);
+
+        $lock = Cache::store('chain')->lock('chain-lock', 10);
+
+        $this->assertTrue($lock->get());
+
+        $owner = $lock->owner();
+
+        $this->assertNotNull($owner);
+
+        $lock->release();
+    }
+
+    #[Test]
+    public function can_restore_lock_from_last_lock_capable_provider()
+    {
+        Cache::store('chain')->providers(['array', 'file']);
+
+        $lock = Cache::store('chain')->lock('chain-restore-lock', 10);
+
+        $this->assertTrue($lock->get());
+
+        $restored = Cache::store('chain')->restoreLock('chain-restore-lock', $lock->owner());
+
+        $this->assertTrue($restored->release());
     }
 
     #[Test]
