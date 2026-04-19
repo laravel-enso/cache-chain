@@ -5,6 +5,7 @@
 [![Downloads](https://poser.pugx.org/laravel-enso/cache-chain/downloads)](https://packagist.org/packages/laravel-enso/cache-chain)
 [![PHP](https://img.shields.io/badge/php-8.0%2B-777bb4.svg)](composer.json)
 [![Issues](https://img.shields.io/github/issues/laravel-enso/cache-chain.svg)](https://github.com/laravel-enso/cache-chain/issues)
+[![Merge Requests](https://img.shields.io/github/issues-pr/laravel-enso/cache-chain.svg)](https://github.com/laravel-enso/cache-chain/pulls)
 
 ## Description
 
