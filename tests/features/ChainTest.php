@@ -1,9 +1,13 @@
 <?php
 
+use Illuminate\Cache\ArrayStore;
+use Illuminate\Cache\FileStore;
 use Illuminate\Cache\Repository;
 use Illuminate\Contracts\Cache\Store;
+use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\File;
 use LaravelEnso\CacheChain\Extensions\Chain;
 use LaravelEnso\CacheChain\Exceptions\Chain as Exception;
 use Tests\TestCase;
@@ -11,25 +15,38 @@ use PHPUnit\Framework\Attributes\Test;
 
 class ChainTest extends TestCase
 {
+    private string $fileCachePath;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->fileCachePath = storage_path('framework/testing/cache-chain/'
+            .(env('TEST_TOKEN') ?: getmypid()).'/'.md5(static::class.'::'.$this->name()));
+
+        File::ensureDirectoryExists($this->fileCachePath);
+    }
+
     #[Test]
     public function should_cache_on_all_configured_providers()
     {
-        $providers = ['array', 'file'];
+        $providers = [$this->arrayRepository(), $this->fileRepository()];
 
         Cache::store('chain')->providers($providers);
 
         $this->assertTrue(Cache::store('chain')->put('foo', 'bar'));
 
         Collection::wrap($providers)->each(fn ($provider) => $this
-            ->assertEquals('bar', Cache::store($provider)->get('foo')));
+            ->assertEquals('bar', $provider->get('foo')));
     }
 
     #[Test]
     public function should_get_from_first_layer_when_available()
     {
-        Cache::store('chain')->providers(['array', new Repository(Mockery::mock(Store::class))]);
+        $firstLayer = $this->arrayRepository();
+        Cache::store('chain')->providers([$firstLayer, new Repository(Mockery::mock(Store::class))]);
 
-        $this->assertTrue(Cache::store('array')->put('foo', 'bar'));
+        $this->assertTrue($firstLayer->put('foo', 'bar'));
 
         $this->assertEquals('bar', Cache::store('chain')->get('foo'));
     }
@@ -37,9 +54,10 @@ class ChainTest extends TestCase
     #[Test]
     public function should_get_from_superior_layer_when_first_not_available()
     {
-        Cache::store('chain')->providers([new Repository(Mockery::spy(Store::class)), 'array']);
+        $superiorLayer = $this->arrayRepository();
+        Cache::store('chain')->providers([new Repository(Mockery::spy(Store::class)), $superiorLayer]);
 
-        $this->assertTrue(Cache::store('array')->put('foo', 'bar'));
+        $this->assertTrue($superiorLayer->put('foo', 'bar'));
 
         $this->assertEquals('bar', Cache::store('chain')->get('foo'));
     }
@@ -47,30 +65,34 @@ class ChainTest extends TestCase
     #[Test]
     public function should_cache_inferior_layers_on_get_when_superior_exists()
     {
-        Cache::store('chain')->providers(['array', 'file']);
+        $firstLayer = $this->arrayRepository();
+        $superiorLayer = $this->fileRepository();
+        Cache::store('chain')->providers([$firstLayer, $superiorLayer]);
 
-        Cache::store('file')->put('foo', 'bar');
+        $superiorLayer->put('foo', 'bar');
 
-        $this->assertNull(Cache::store('array')->get('foo'));
+        $this->assertNull($firstLayer->get('foo'));
         $this->assertEquals('bar', Cache::store('chain')->get('foo'));
-        $this->assertEquals('bar', Cache::store('array')->get('foo'));
+        $this->assertEquals('bar', $firstLayer->get('foo'));
     }
 
     #[Test]
     public function should_sync_inferior_layers_when_superior_exists()
     {
-        Cache::store('chain')->providers(['array', 'file']);
+        $firstLayer = $this->arrayRepository();
+        $superiorLayer = $this->fileRepository();
+        Cache::store('chain')->providers([$firstLayer, $superiorLayer]);
 
-        Cache::store('file')->put('foo', 5);
+        $superiorLayer->put('foo', 5);
 
         $this->assertEquals(6, Cache::store('chain')->increment('foo'));
-        $this->assertEquals(6, Cache::store('array')->get('foo'));
+        $this->assertEquals(6, $firstLayer->get('foo'));
     }
 
     #[Test]
     public function can_flush()
     {
-        $providers = ['file', 'array'];
+        $providers = [$this->fileRepository(), $this->arrayRepository()];
         Cache::store('chain')->providers($providers);
 
         Cache::store('chain')->put('foo', 'bar');
@@ -78,14 +100,14 @@ class ChainTest extends TestCase
         $this->assertTrue(Cache::store('chain')->flush());
 
         Collection::wrap($providers)->each(fn ($provider) => tap($this)
-            ->assertFalse(Cache::store($provider)->has('foo'))
-            ->assertFalse(Cache::store($provider)->has('bar')));
+            ->assertFalse($provider->has('foo'))
+            ->assertFalse($provider->has('bar')));
     }
 
     #[Test]
     public function can_forget()
     {
-        $providers = ['file', 'array'];
+        $providers = [$this->fileRepository(), $this->arrayRepository()];
         Cache::store('chain')->providers($providers);
 
         Cache::store('chain')->put('foo', 'bar');
@@ -93,40 +115,40 @@ class ChainTest extends TestCase
         $this->assertTrue(Cache::store('chain')->forget('foo'));
 
         Collection::wrap($providers)->each(fn ($provider) => tap($this)
-            ->assertFalse(Cache::store($provider)->has('foo'))
-            ->assertTrue(Cache::store($provider)->has('bar')));
+            ->assertFalse($provider->has('foo'))
+            ->assertTrue($provider->has('bar')));
     }
 
     #[Test]
     public function can_increment()
     {
-        $providers = ['file', 'array'];
+        $providers = [$this->fileRepository(), $this->arrayRepository()];
         Cache::store('chain')->providers($providers);
 
         Cache::store('chain')->put('number', 1);
         $this->assertEquals(3, Cache::store('chain')->increment('number', 2));
 
         Collection::wrap($providers)->each(fn ($provider) => $this
-            ->assertEquals(3, Cache::store($provider)->get('number')));
+            ->assertEquals(3, $provider->get('number')));
     }
 
     #[Test]
     public function can_decrement()
     {
-        $providers = ['file', 'array'];
+        $providers = [$this->fileRepository(), $this->arrayRepository()];
         Cache::store('chain')->providers($providers);
 
         Cache::store('chain')->put('number', 3);
         $this->assertEquals(1, Cache::store('chain')->decrement('number', 2));
 
         Collection::wrap($providers)->each(fn ($provider) => $this
-            ->assertEquals(1, Cache::store($provider)->get('number')));
+            ->assertEquals(1, $provider->get('number')));
     }
 
     #[Test]
     public function can_touch()
     {
-        $providers = ['file', 'array'];
+        $providers = [$this->fileRepository(), $this->arrayRepository()];
         Cache::store('chain')->providers($providers);
 
         Cache::store('chain')->put('foo', 'bar', 60);
@@ -134,18 +156,18 @@ class ChainTest extends TestCase
         $this->assertTrue(Cache::store('chain')->touch('foo', 120));
 
         Collection::wrap($providers)->each(fn ($provider) => $this
-            ->assertEquals('bar', Cache::store($provider)->get('foo')));
+            ->assertEquals('bar', $provider->get('foo')));
     }
 
     public function can_cache_forever_on_all_configured_providers()
     {
-        $providers = ['file', 'array'];
+        $providers = [$this->fileRepository(), $this->arrayRepository()];
         Cache::store('chain')->providers($providers);
 
         $this->assertTrue(Cache::store('chain')->forever('forever', 'value'));
 
         Collection::wrap($providers)->each(fn ($provider) => $this
-            ->assertEquals('value', Cache::store($provider)->get('forever')));
+            ->assertEquals('value', $provider->get('forever')));
     }
 
     #[Test]
@@ -170,7 +192,7 @@ class ChainTest extends TestCase
     #[Test]
     public function uses_last_lock_capable_provider_for_locks()
     {
-        Cache::store('chain')->providers(['array', 'file']);
+        Cache::store('chain')->providers([$this->arrayRepository(), $this->fileRepository()]);
 
         $lock = Cache::store('chain')->lock('chain-lock', 10);
 
@@ -186,7 +208,7 @@ class ChainTest extends TestCase
     #[Test]
     public function can_restore_lock_from_last_lock_capable_provider()
     {
-        Cache::store('chain')->providers(['array', 'file']);
+        Cache::store('chain')->providers([$this->arrayRepository(), $this->fileRepository()]);
 
         $lock = Cache::store('chain')->lock('chain-restore-lock', 10);
 
@@ -216,10 +238,19 @@ class ChainTest extends TestCase
 
     protected function tearDown(): void
     {
-        if (is_dir(storage_path('framework/cache/data'))) {
-            Cache::store('file')->flush();
-        }
+        File::deleteDirectory($this->fileCachePath);
+        clearstatcache();
 
         parent::tearDown();
+    }
+
+    private function arrayRepository(): Repository
+    {
+        return new Repository(new ArrayStore());
+    }
+
+    private function fileRepository(): Repository
+    {
+        return new Repository(new FileStore(new Filesystem(), $this->fileCachePath));
     }
 }
